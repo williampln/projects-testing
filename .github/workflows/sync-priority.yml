@@ -1,0 +1,104 @@
+# .github/workflows/sync-priority.yml
+name: Sync Priority Labels to Custom Field
+
+on:
+  issues:
+    types: [opened, labeled, unlabeled, edited]
+  pull_request:
+    types: [opened, labeled, unlabeled, edited]
+
+jobs:
+  sync-priority:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync Priority to Custom Field
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const issue = context.payload.issue || context.payload.pull_request;
+            const labels = issue.labels.map(label => label.name.toLowerCase());
+            
+            // Define your priority mapping (adjust these to match your labels)
+            const priorityMap = {
+              'Highest': 'Highest',
+              'high': 'High',
+              'Medium': 'Medium', 
+              'low': 'Low'
+            };
+            
+            // Find priority label
+            let priority = null;
+            for (const label of labels) {
+              if (priorityMap[label]) {
+                priority = priorityMap[label];
+                break;
+              }
+            }
+            
+            // If no priority label found, set to default or skip
+            if (!priority) {
+              priority = 'Medium'; // Default priority, or comment this line to skip
+            }
+            
+            console.log(`Setting priority to: ${priority}`);
+            
+            // You'll need to replace these values with your actual project details
+            const PROJECT_ID = 'PVT_kwHOC9uRFc4A8fRR'; // Get this from your project URL
+            const PRIORITY_FIELD_ID = 'PVTSSF_lAHOC9uRFc4A8fRRzgweVXg'; // Get this from GraphQL API
+            
+            // First, get the project item ID for this issue
+            const projectItems = await github.graphql(`
+              query($owner: String!, $repo: String!, $issueNumber: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  issue(number: $issueNumber) {
+                    projectItems(first: 10) {
+                      nodes {
+                        id
+                        project {
+                          id
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issueNumber: issue.number
+            });
+            
+            // Find the project item for our specific project
+            const projectItem = projectItems.repository.issue.projectItems.nodes
+              .find(item => item.project.id === PROJECT_ID);
+            
+            if (!projectItem) {
+              console.log('Issue not found in project, skipping...');
+              return;
+            }
+            
+            // Update the custom field
+            await github.graphql(`
+              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
+                updateProjectV2ItemFieldValue(input: {
+                  projectId: $projectId
+                  itemId: $itemId
+                  fieldId: $fieldId
+                  value: {
+                    text: $value
+                  }
+                }) {
+                  projectV2Item {
+                    id
+                  }
+                }
+              }
+            `, {
+              projectId: PROJECT_ID,
+              itemId: projectItem.id,
+              fieldId: PRIORITY_FIELD_ID,
+              value: priority
+            });
+            
+            console.log(`Updated priority field to: ${priority}`);
