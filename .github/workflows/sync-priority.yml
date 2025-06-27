@@ -1,12 +1,10 @@
 # .github/workflows/sync-priority.yml
 name: Sync Priority Labels to Custom Field
-
 on:
   issues:
     types: [opened, labeled, unlabeled, edited]
   pull_request:
     types: [opened, labeled, unlabeled, edited]
-
 jobs:
   sync-priority:
     runs-on: ubuntu-latest
@@ -16,22 +14,36 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const issue = context.payload.issue || context.payload.pull_request;
-            const labels = issue.labels.map(label => label.name.toLowerCase());
+            // Debug logging
+            console.log('Event:', context.eventName);
+            console.log('Action:', context.payload.action);
             
-            // Define your priority mapping (adjust these to match your labels)
+            const issue = context.payload.issue || context.payload.pull_request;
+            
+            if (!issue) {
+              console.log('No issue or PR found in payload, skipping...');
+              return;
+            }
+            
+            console.log(`Processing ${context.payload.issue ? 'issue' : 'PR'} #${issue.number}`);
+            console.log('Labels:', issue.labels.map(l => l.name));
+            
+            const labels = issue.labels.map(label => label.name);
+            
+            // Define your priority mapping with case-insensitive matching
             const priorityMap = {
-              'Highest': 'Highest',
-              'High': 'High',
-              'Medium': 'Medium', 
-              'Low': 'Low'
+              'highest': 'Highest',
+              'high': 'High',
+              'medium': 'Medium', 
+              'low': 'Low'
             };
             
-            // Find priority label
+            // Find priority label with case-insensitive matching
             let priority = null;
             for (const label of labels) {
-              if (priorityMap[label]) {
-                priority = priorityMap[label];
+              const lowerLabel = label.toLowerCase();
+              if (priorityMap[lowerLabel]) {
+                priority = priorityMap[lowerLabel];
                 break;
               }
             }
@@ -48,57 +60,69 @@ jobs:
             const PRIORITY_FIELD_ID = 'PVTSSF_lAHOC9uRFc4A8fRRzgweVXg'; // Get this from GraphQL API
             
             // First, get the project item ID for this issue
-            const projectItems = await github.graphql(`
-              query($owner: String!, $repo: String!, $issueNumber: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  issue(number: $issueNumber) {
-                    projectItems(first: 10) {
-                      nodes {
-                        id
-                        project {
+            try {
+              const projectItems = await github.graphql(`
+                query($owner: String!, $repo: String!, $issueNumber: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    issue(number: $issueNumber) {
+                      projectItems(first: 10) {
+                        nodes {
                           id
+                          project {
+                            id
+                          }
                         }
                       }
                     }
                   }
                 }
+              `, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issueNumber: issue.number
+              });
+              
+              // Check if issue was found
+              if (!projectItems.repository.issue) {
+                console.log(`Issue #${issue.number} not found in repository`);
+                return;
               }
-            `, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issueNumber: issue.number
-            });
-            
-            // Find the project item for our specific project
-            const projectItem = projectItems.repository.issue.projectItems.nodes
-              .find(item => item.project.id === PROJECT_ID);
-            
-            if (!projectItem) {
-              console.log('Issue not found in project, skipping...');
-              return;
-            }
-            
-            // Update the custom field
-            await github.graphql(`
-              mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
-                updateProjectV2ItemFieldValue(input: {
-                  projectId: $projectId
-                  itemId: $itemId
-                  fieldId: $fieldId
-                  value: {
-                    text: $value
-                  }
-                }) {
-                  projectV2Item {
-                    id
+              
+              // Find the project item for our specific project
+              const projectItem = projectItems.repository.issue.projectItems.nodes
+                .find(item => item.project.id === PROJECT_ID);
+              
+              if (!projectItem) {
+                console.log('Issue not found in project, skipping...');
+                return;
+              }
+              
+              // Update the custom field
+              await github.graphql(`
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: {
+                      text: $value
+                    }
+                  }) {
+                    projectV2Item {
+                      id
+                    }
                   }
                 }
-              }
-            `, {
-              projectId: PROJECT_ID,
-              itemId: projectItem.id,
-              fieldId: PRIORITY_FIELD_ID,
-              value: priority
-            });
-            
-            console.log(`Updated priority field to: ${priority}`);
+              `, {
+                projectId: PROJECT_ID,
+                itemId: projectItem.id,
+                fieldId: PRIORITY_FIELD_ID,
+                value: priority
+              });
+              
+              console.log(`Updated priority field to: ${priority}`);
+              
+            } catch (error) {
+              console.error('Error:', error);
+              throw error;
+            }
