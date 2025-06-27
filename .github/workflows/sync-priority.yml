@@ -22,9 +22,9 @@ jobs:
             // Define your priority mapping (adjust these to match your labels)
             const priorityMap = {
               'Highest': 'Highest',
-              'high': 'High',
+              'High': 'High',
               'Medium': 'Medium', 
-              'low': 'Low'
+              'Low': 'Low'
             };
             
             // Find priority label
