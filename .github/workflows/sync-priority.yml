@@ -1,208 +1,167 @@
-# .github/workflows/sync-priority.yml
-name: Sync Priority Labels to Custom Field
+name: Sync Priority Field with Labels
+
 on:
   issues:
-    types: [opened, labeled, unlabeled, edited]
+    types: [labeled, unlabeled, opened, edited]
   pull_request:
-    types: [opened, labeled, unlabeled, edited]
+    types: [labeled, unlabeled, opened, edited]
+
 jobs:
   sync-priority:
     runs-on: ubuntu-latest
     steps:
-      - name: Debug Context
+      - name: Sync Priority Field
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            console.log('=== DEBUG INFO ===');
-            console.log('Event:', context.eventName);
-            console.log('Action:', context.payload.action);
-            console.log('Repository:', context.repo.owner + '/' + context.repo.repo);
+            const { owner, repo } = context.repo;
+            const issueNumber = context.payload.issue?.number || context.payload.pull_request?.number;
             
-            if (context.payload.issue) {
-              console.log('Issue #:', context.payload.issue.number);
-              console.log('Issue title:', context.payload.issue.title);
-              console.log('Issue labels:', context.payload.issue.labels.map(l => l.name));
-            }
+            if (!issueNumber) return;
             
-            if (context.payload.pull_request) {
-              console.log('PR #:', context.payload.pull_request.number);
-              console.log('PR title:', context.payload.pull_request.title);
-              console.log('PR labels:', context.payload.pull_request.labels.map(l => l.name));
-            }
+            // Get the issue/PR details
+            const { data: issue } = await github.rest.issues.get({
+              owner,
+              repo,
+              issue_number: issueNumber
+            });
             
-            console.log('=== END DEBUG ===');
-            
-      - name: Sync Priority to Custom Field
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const issue = context.payload.issue || context.payload.pull_request;
-            
-            if (!issue) {
-              console.log('No issue or PR found in payload, skipping...');
-              return;
-            }
-            
-            console.log(`Processing ${context.payload.issue ? 'issue' : 'PR'} #${issue.number}`);
-            
-            // Simple REST API check first to verify the issue/PR exists
-            try {
-              const { data } = await github.rest.issues.get({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number
-              });
-              console.log(`✓ Found ${data.pull_request ? 'PR' : 'issue'} #${data.number}: "${data.title}"`);
-            } catch (error) {
-              console.log(`✗ Issue/PR #${issue.number} not found via REST API:`, error.message);
-              return;
-            }
-            
-            const labels = issue.labels.map(label => label.name);
-            console.log('Labels:', labels);
-            
-            // Define your priority mapping with case-insensitive matching
-            const priorityMap = {
-              'highest': 'Highest',
-              'high': 'High',
-              'medium': 'Medium', 
-              'low': 'Low'
+            // Define priority mapping
+            const priorityLabels = {
+              'Highest': 'Highest',
+              'High': 'High', 
+              'Medium': 'Medium',
+              'Low': 'Low'
             };
             
-            // Find priority label with case-insensitive matching
+            // Find the highest priority label
             let priority = null;
-            for (const label of labels) {
-              const lowerLabel = label.toLowerCase();
-              if (priorityMap[lowerLabel]) {
-                priority = priorityMap[lowerLabel];
-                console.log(`Found priority label: ${label} -> ${priority}`);
-                break;
+            const labelNames = issue.labels.map(label => label.name);
+            
+            for (const [label, priorityValue] of Object.entries(priorityLabels)) {
+              if (labelNames.includes(label)) {
+                priority = priorityValue;
+                break; // Takes the first match (highest priority)
               }
             }
             
-            // If no priority label found, set to default or skip
-            if (!priority) {
-              priority = 'Medium'; // Default priority
-              console.log('No priority label found, using default: Medium');
-            }
-            
-            console.log(`Final priority: ${priority}`);
-            
-            // You'll need to replace these values with your actual project details
-            const PROJECT_ID = 'PVT_kwHOC9uRFc4A8fRR';
-            const PRIORITY_FIELD_ID = 'PVTSSF_lAHOC9uRFc4A8fRRzgweVXg';
-            
-            // For now, let's just log what we would do instead of actually updating
-            console.log('Would update project field with:');
-            console.log('- Project ID:', PROJECT_ID);
-            console.log('- Field ID:', PRIORITY_FIELD_ID);
-            console.log('- Value:', priority);
-            
-            // Uncomment the GraphQL section below once the basic workflow is working
-            /*
-            try {
-              // Check if we're dealing with an issue or PR
-              const isIssue = !!context.payload.issue;
-              
-              let projectItems;
-              
-              if (isIssue) {
-                projectItems = await github.graphql(`
-                  query($owner: String!, $repo: String!, $issueNumber: Int!) {
-                    repository(owner: $owner, name: $repo) {
-                      issue(number: $issueNumber) {
-                        projectItems(first: 10) {
-                          nodes {
-                            id
-                            project {
-                              id
-                            }
-                          }
+            // Get project items for this issue
+            const query = `
+              query($owner: String!, $repo: String!, $issueNumber: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  issue(number: $issueNumber) {
+                    projectItems(first: 10) {
+                      nodes {
+                        id
+                        project {
+                          id
+                          title
                         }
                       }
-                    }
-                  }
-                `, {
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issueNumber: issue.number
-                });
-              } else {
-                projectItems = await github.graphql(`
-                  query($owner: String!, $repo: String!, $prNumber: Int!) {
-                    repository(owner: $owner, name: $repo) {
-                      pullRequest(number: $prNumber) {
-                        projectItems(first: 10) {
-                          nodes {
-                            id
-                            project {
-                              id
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                `, {
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  prNumber: issue.number
-                });
-              }
-              
-              const item = isIssue ? projectItems.repository.issue : projectItems.repository.pullRequest;
-              
-              if (!item) {
-                console.log(`${isIssue ? 'Issue' : 'PR'} #${issue.number} not found in repository`);
-                return;
-              }
-              
-              console.log('Found project items:', item.projectItems.nodes.length);
-              
-              const projectItem = item.projectItems.nodes
-                .find(item => item.project.id === PROJECT_ID);
-              
-              if (!projectItem) {
-                console.log('Issue/PR not found in the specified project, skipping...');
-                return;
-              }
-              
-              console.log('Found project item:', projectItem.id);
-              
-              await github.graphql(`
-                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: String!) {
-                  updateProjectV2ItemFieldValue(input: {
-                    projectId: $projectId
-                    itemId: $itemId
-                    fieldId: $fieldId
-                    value: {
-                      text: $value
-                    }
-                  }) {
-                    projectV2Item {
-                      id
                     }
                   }
                 }
-              `, {
-                projectId: PROJECT_ID,
-                itemId: projectItem.id,
-                fieldId: PRIORITY_FIELD_ID,
-                value: priority
+              }
+            `;
+            
+            const result = await github.graphql(query, {
+              owner,
+              repo,
+              issueNumber
+            });
+            
+            // Update priority field for each project item
+            for (const projectItem of result.repository.issue.projectItems.nodes) {
+              // Get project fields
+              const fieldsQuery = `
+                query($projectId: ID!) {
+                  node(id: $projectId) {
+                    ... on ProjectV2 {
+                      fields(first: 20) {
+                        nodes {
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options {
+                              id
+                              name
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+              
+              const fieldsResult = await github.graphql(fieldsQuery, {
+                projectId: projectItem.project.id
               });
               
-              console.log(`✓ Updated priority field to: ${priority}`);
+              // Find the Priority field
+              const priorityField = fieldsResult.node.fields.nodes.find(
+                field => field.name === 'Priority'
+              );
               
-            } catch (error) {
-              console.error('GraphQL Error:', error);
-              if (error.errors) {
-                error.errors.forEach(err => {
-                  console.error('- Error:', err.message);
-                  console.error('- Type:', err.type);
-                  console.error('- Path:', err.path);
+              if (priorityField && priority) {
+                // Find the option ID for the priority value
+                const option = priorityField.options.find(opt => opt.name === priority);
+                
+                if (option) {
+                  // Update the field
+                  const updateMutation = `
+                    mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+                      updateProjectV2ItemFieldValue(input: {
+                        projectId: $projectId
+                        itemId: $itemId
+                        fieldId: $fieldId
+                        value: $value
+                      }) {
+                        projectV2Item {
+                          id
+                        }
+                      }
+                    }
+                  `;
+                  
+                  await github.graphql(updateMutation, {
+                    projectId: projectItem.project.id,
+                    itemId: projectItem.id,
+                    fieldId: priorityField.id,
+                    value: {
+                      singleSelectOptionId: option.id
+                    }
+                  });
+                  
+                  console.log(`Updated priority to ${priority} for issue #${issueNumber} in project ${projectItem.project.title}`);
+                }
+              } else if (priorityField && !priority) {
+                // Clear the priority field if no priority label exists
+                const updateMutation = `
+                  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $value: ProjectV2FieldValue!) {
+                    updateProjectV2ItemFieldValue(input: {
+                      projectId: $projectId
+                      itemId: $itemId
+                      fieldId: $fieldId
+                      value: $value
+                    }) {
+                      projectV2Item {
+                        id
+                      }
+                    }
+                  }
+                `;
+                
+                await github.graphql(updateMutation, {
+                  projectId: projectItem.project.id,
+                  itemId: projectItem.id,
+                  fieldId: priorityField.id,
+                  value: {
+                    singleSelectOptionId: null
+                  }
                 });
+                
+                console.log(`Cleared priority for issue #${issueNumber} in project ${projectItem.project.title}`);
               }
             }
-            */
