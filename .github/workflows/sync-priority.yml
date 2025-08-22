@@ -203,8 +203,7 @@ jobs:
             
             // CONFIGURE: Add your specific project names here
             const targetProjects = [
-              'projects-testing',  // Replace with your actual project name
-              // 'Another Project', // Add more project names if needed
+              'Test Project',  // Replace with your actual project name
             ];
             
             console.log(`Found ${projectItems.length} project items for issue #${issueNumber}`);
