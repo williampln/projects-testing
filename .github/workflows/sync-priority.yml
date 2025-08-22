@@ -201,16 +201,29 @@ jobs:
               console.log(`${owner} is not an organization or no org projects found`);
             }
             
-            console.log(`Found ${projectItems.length} project items for issue #${issueNumber}`);
-            console.log('Projects:', projectItems.map(item => item.project.title));
+            // CONFIGURE: Add your specific project names here
+            const targetProjects = [
+              'projects-testing',  // Replace with your actual project name
+              // 'Another Project', // Add more project names if needed
+            ];
             
-            if (projectItems.length === 0) {
-              console.log('Issue is not in any projects yet');
+            console.log(`Found ${projectItems.length} project items for issue #${issueNumber}`);
+            console.log('All projects:', projectItems.map(item => item.project.title));
+            
+            // Filter to only target projects
+            const filteredProjectItems = projectItems.filter(item => 
+              targetProjects.includes(item.project.title)
+            );
+            
+            console.log('Target projects:', filteredProjectItems.map(item => item.project.title));
+            
+            if (filteredProjectItems.length === 0) {
+              console.log('Issue is not in any target projects');
               return;
             }
             
-            // Update priority field for each project item
-            for (const projectItem of projectItems) {
+            // Update priority field for each target project item
+            for (const projectItem of filteredProjectItems) {
               // Get project fields
               const fieldsQuery = `
                 query($projectId: ID!) {
