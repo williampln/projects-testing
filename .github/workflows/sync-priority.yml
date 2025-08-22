@@ -27,23 +27,30 @@ jobs:
               issue_number: issueNumber
             });
             
-            // Define priority mapping
+            // Define priority mapping - UPDATE THESE TO MATCH YOUR EXACT LABEL NAMES
             const priorityLabels = {
-              'Highest': 'Highest',
-              'High': 'High', 
-              'Medium': 'Medium',
-              'Low': 'Low'
+              'Highest': 'Highest',  // Change left side to your exact label name
+              'High': 'High',        // Change left side to your exact label name
+              'Medium': 'Medium',    // Change left side to your exact label name
+              'Low': 'Low'           // Change left side to your exact label name
             };
             
             // Find the highest priority label
             let priority = null;
             const labelNames = issue.labels.map(label => label.name);
+            console.log(`Issue #${issueNumber} labels:`, labelNames);
             
             for (const [label, priorityValue] of Object.entries(priorityLabels)) {
               if (labelNames.includes(label)) {
                 priority = priorityValue;
+                console.log(`Found priority label: ${label} -> ${priorityValue}`);
                 break; // Takes the first match (highest priority)
               }
+            }
+            
+            if (!priority) {
+              console.log('No priority labels found');
+              return;
             }
             
             // Get project items for this issue
@@ -70,6 +77,13 @@ jobs:
               repo,
               issueNumber
             });
+            
+            console.log(`Found ${result.repository.issue.projectItems.nodes.length} project items for issue #${issueNumber}`);
+            
+            if (result.repository.issue.projectItems.nodes.length === 0) {
+              console.log('Issue is not in any projects yet');
+              return;
+            }
             
             // Update priority field for each project item
             for (const projectItem of result.repository.issue.projectItems.nodes) {
@@ -99,10 +113,20 @@ jobs:
                 projectId: projectItem.project.id
               });
               
-              // Find the Priority field
+              console.log(`Project: ${projectItem.project.title}`);
+              console.log('Available fields:', fieldsResult.node.fields.nodes.map(f => f.name));
+              
+              // Find the Priority field (update this name to match your field)
               const priorityField = fieldsResult.node.fields.nodes.find(
-                field => field.name === 'Priority'
+                field => field.name === 'Priority' // Change this to match your exact field name
               );
+              
+              if (!priorityField) {
+                console.log(`Priority field not found in project ${projectItem.project.title}`);
+                continue;
+              }
+              
+              console.log('Priority field options:', priorityField.options.map(opt => opt.name));
               
               if (priorityField && priority) {
                 // Find the option ID for the priority value
