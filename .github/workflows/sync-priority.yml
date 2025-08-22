@@ -5,6 +5,12 @@ on:
     types: [labeled, unlabeled, opened, edited]
   pull_request:
     types: [labeled, unlabeled, opened, edited]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: 'Specific issue number to sync (leave empty to sync all open issues with priority labels)'
+        required: false
+        type: string
 
 jobs:
   sync-priority:
@@ -53,12 +59,13 @@ jobs:
               return;
             }
             
-            // Get project items for this issue
-            const query = `
+            // Get project items for this issue - works for user, repo, and org projects
+            const issueQuery = `
               query($owner: String!, $repo: String!, $issueNumber: Int!) {
                 repository(owner: $owner, name: $repo) {
                   issue(number: $issueNumber) {
-                    projectItems(first: 10) {
+                    id
+                    projectItems(first: 50) {
                       nodes {
                         id
                         project {
@@ -72,21 +79,72 @@ jobs:
               }
             `;
             
-            const result = await github.graphql(query, {
+            // Also search user projects
+            const userQuery = `
+              query($login: String!, $issueId: ID!) {
+                user(login: $login) {
+                  projectsV2(first: 50) {
+                    nodes {
+                      id
+                      title
+                      items(first: 100) {
+                        nodes {
+                          id
+                          content {
+                            ... on Issue {
+                              id
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+            
+            // First get the issue details and repository projects
+            const issueResult = await github.graphql(issueQuery, {
               owner,
               repo,
               issueNumber
             });
             
-            console.log(`Found ${result.repository.issue.projectItems.nodes.length} project items for issue #${issueNumber}`);
+            const issueId = issueResult.repository.issue.id;
+            let projectItems = issueResult.repository.issue.projectItems.nodes;
             
-            if (result.repository.issue.projectItems.nodes.length === 0) {
+            // Then search user projects
+            const userResult = await github.graphql(userQuery, {
+              login: owner, // assuming the repo owner is the user
+              issueId: issueId
+            });
+            
+            // Find user projects that contain this issue
+            for (const project of userResult.user.projectsV2.nodes) {
+              const matchingItems = project.items.nodes.filter(item => 
+                item.content && item.content.id === issueId
+              );
+              for (const item of matchingItems) {
+                projectItems.push({
+                  id: item.id,
+                  project: {
+                    id: project.id,
+                    title: project.title
+                  }
+                });
+              }
+            }
+            
+            console.log(`Found ${projectItems.length} project items for issue #${issueNumber}`);
+            console.log('Projects:', projectItems.map(item => item.project.title));
+            
+            if (projectItems.length === 0) {
               console.log('Issue is not in any projects yet');
               return;
             }
             
             // Update priority field for each project item
-            for (const projectItem of result.repository.issue.projectItems.nodes) {
+            for (const projectItem of projectItems) {
               // Get project fields
               const fieldsQuery = `
                 query($projectId: ID!) {
