@@ -113,17 +113,28 @@ jobs:
             const issueId = issueResult.repository.issue.id;
             let projectItems = issueResult.repository.issue.projectItems.nodes;
             
+            console.log(`Issue ID: ${issueId}`);
+            
             // Then search user projects
             const userResult = await github.graphql(userQuery, {
               login: owner // assuming the repo owner is the user
             });
             
+            console.log(`Searching user projects for: ${owner}`);
+            console.log(`Found ${userResult.user.projectsV2.nodes.length} user projects`);
+            
             // Find user projects that contain this issue
             for (const project of userResult.user.projectsV2.nodes) {
+              console.log(`Checking project: ${project.title} (${project.items.nodes.length} items)`);
+              
               const matchingItems = project.items.nodes.filter(item => 
                 item.content && item.content.id === issueId
               );
+              
+              console.log(`Found ${matchingItems.length} matching items in ${project.title}`);
+              
               for (const item of matchingItems) {
+                console.log(`Adding project item: ${item.id} from project: ${project.title}`);
                 projectItems.push({
                   id: item.id,
                   project: {
