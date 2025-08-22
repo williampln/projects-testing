@@ -19,7 +19,7 @@ jobs:
       - name: Sync Priority Field
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.PERSONAL_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
             const issueNumber = context.payload.issue?.number || context.payload.pull_request?.number;
@@ -116,33 +116,89 @@ jobs:
             console.log(`Issue ID: ${issueId}`);
             
             // Then search user projects
-            const userResult = await github.graphql(userQuery, {
-              login: owner // assuming the repo owner is the user
-            });
-            
-            console.log(`Searching user projects for: ${owner}`);
-            console.log(`Found ${userResult.user.projectsV2.nodes.length} user projects`);
-            
-            // Find user projects that contain this issue
-            for (const project of userResult.user.projectsV2.nodes) {
-              console.log(`Checking project: ${project.title} (${project.items.nodes.length} items)`);
+            try {
+              const userResult = await github.graphql(userQuery, {
+                login: owner
+              });
               
-              const matchingItems = project.items.nodes.filter(item => 
-                item.content && item.content.id === issueId
-              );
+              console.log(`Searching user projects for: ${owner}`);
+              console.log(`Found ${userResult.user.projectsV2.nodes.length} user projects`);
               
-              console.log(`Found ${matchingItems.length} matching items in ${project.title}`);
-              
-              for (const item of matchingItems) {
-                console.log(`Adding project item: ${item.id} from project: ${project.title}`);
-                projectItems.push({
-                  id: item.id,
-                  project: {
-                    id: project.id,
-                    title: project.title
-                  }
-                });
+              // Find user projects that contain this issue
+              for (const project of userResult.user.projectsV2.nodes) {
+                console.log(`Checking project: ${project.title} (${project.items.nodes.length} items)`);
+                
+                const matchingItems = project.items.nodes.filter(item => 
+                  item.content && item.content.id === issueId
+                );
+                
+                console.log(`Found ${matchingItems.length} matching items in ${project.title}`);
+                
+                for (const item of matchingItems) {
+                  console.log(`Adding project item: ${item.id} from project: ${project.title}`);
+                  projectItems.push({
+                    id: item.id,
+                    project: {
+                      id: project.id,
+                      title: project.title
+                    }
+                  });
+                }
               }
+            } catch (error) {
+              console.log(`Error accessing user projects for ${owner}:`, error.message);
+            }
+            
+            // Also try organization projects if the user is part of an org
+            try {
+              const orgQuery = `
+                query($owner: String!) {
+                  organization(login: $owner) {
+                    projectsV2(first: 50) {
+                      nodes {
+                        id
+                        title
+                        items(first: 100) {
+                          nodes {
+                            id
+                            content {
+                              ... on Issue {
+                                id
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+              
+              const orgResult = await github.graphql(orgQuery, {
+                login: owner
+              });
+              
+              console.log(`Found ${orgResult.organization.projectsV2.nodes.length} organization projects`);
+              
+              for (const project of orgResult.organization.projectsV2.nodes) {
+                console.log(`Checking org project: ${project.title} (${project.items.nodes.length} items)`);
+                
+                const matchingItems = project.items.nodes.filter(item => 
+                  item.content && item.content.id === issueId
+                );
+                
+                for (const item of matchingItems) {
+                  projectItems.push({
+                    id: item.id,
+                    project: {
+                      id: project.id,
+                      title: project.title
+                    }
+                  });
+                }
+              }
+            } catch (error) {
+              console.log(`${owner} is not an organization or no org projects found`);
             }
             
             console.log(`Found ${projectItems.length} project items for issue #${issueNumber}`);
