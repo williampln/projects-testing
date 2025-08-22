@@ -5,6 +5,8 @@ on:
     types: [labeled, unlabeled, opened, edited]
   pull_request:
     types: [labeled, unlabeled, opened, edited]
+  project_v2_item:
+    types: [created]
 
 jobs:
   sync-priority:
@@ -16,7 +18,46 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const issueNumber = context.payload.issue?.number || context.payload.pull_request?.number;
+            // Handle different event types
+            let issueNumber, nodeId;
+            
+            if (context.eventName === 'project_v2_item') {
+              // For project item events, we need to get the issue/PR from the project item
+              nodeId = context.payload.project_v2_item.content_node_id;
+              
+              // Get issue/PR details from node ID
+              const nodeQuery = `
+                query($nodeId: ID!) {
+                  node(id: $nodeId) {
+                    ... on Issue {
+                      number
+                      repository {
+                        owner {
+                          login
+                        }
+                        name
+                      }
+                    }
+                    ... on PullRequest {
+                      number
+                      repository {
+                        owner {
+                          login
+                        }
+                        name
+                      }
+                    }
+                  }
+                }
+              `;
+              
+              const nodeResult = await github.graphql(nodeQuery, { nodeId });
+              if (!nodeResult.node) return;
+              
+              issueNumber = nodeResult.node.number;
+            } else {
+              issueNumber = context.payload.issue?.number || context.payload.pull_request?.number;
+            }
             
             if (!issueNumber) return;
             
