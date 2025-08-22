@@ -79,9 +79,9 @@ jobs:
               }
             `;
             
-            // Also search user projects
+            // Also search user projects - simplified query
             const userQuery = `
-              query($login: String!, $issueId: ID!) {
+              query($login: String!) {
                 user(login: $login) {
                   projectsV2(first: 50) {
                     nodes {
@@ -115,8 +115,7 @@ jobs:
             
             // Then search user projects
             const userResult = await github.graphql(userQuery, {
-              login: owner, // assuming the repo owner is the user
-              issueId: issueId
+              login: owner // assuming the repo owner is the user
             });
             
             // Find user projects that contain this issue
