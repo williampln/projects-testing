@@ -49,13 +49,13 @@ jobs:
             
             // Get issue/PR ID and find the project
             const query = `
-              query($owner: String!, $repo: String!, $issueNumber: Int!, $orgName: String!) {
+              query($owner: String!, $repo: String!, $issueNumber: Int!, $login: String!) {
                 repository(owner: $owner, name: $repo) {
                   ${isIssue ? 'issue' : 'pullRequest'}(number: $issueNumber) {
                     id
                   }
                 }
-                organization(login: $orgName) {
+                user(login: $login) {
                   projectsV2(first: 10, query: "Test") {
                     nodes {
                       id
@@ -85,20 +85,20 @@ jobs:
               owner,
               repo,
               issueNumber,
-              orgName: owner
+              login: owner // assuming personal project is under the repo owner's account
             });
             
             const itemId = result.repository[isIssue ? 'issue' : 'pullRequest'].id;
             console.log(`${isIssue ? 'Issue' : 'PR'} ID: ${itemId}`);
             
-            // Find the target project
-            const targetProject = result.organization.projectsV2.nodes.find(
+            // Find the target project in user's personal projects
+            const targetProject = result.user.projectsV2.nodes.find(
               project => project.title === targetProjectName
             );
             
             if (!targetProject) {
-              console.log(`Project "${targetProjectName}" not found`);
-              console.log('Available projects:', result.organization.projectsV2.nodes.map(p => p.title));
+              console.log(`Personal project "${targetProjectName}" not found`);
+              console.log('Available personal projects:', result.user.projectsV2.nodes.map(p => p.title));
               return;
             }
             
