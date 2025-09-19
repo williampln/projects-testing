@@ -30,7 +30,7 @@ jobs:
             console.log(`Adding ${isIssue ? 'issue' : 'PR'} #${issueNumber} to Bug Tracking project`);
             
             // CONFIGURE: Your project name
-            const targetProjectName = 'Delivery - Bug Tracking';
+            const targetProjectName = 'Test Project';
             
             // Get issue/PR ID and find the project
             const query = `
