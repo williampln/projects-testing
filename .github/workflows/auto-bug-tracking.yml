@@ -2,9 +2,9 @@ name: Auto-add Bug Issues to Project
 
 on:
   issues:
-    types: [opened, labeled] 
+    types: [opened]
   pull_request:
-    types: [opened, labeled]
+    types: [opened]
 
 permissions:
   issues: read
@@ -85,7 +85,7 @@ jobs:
               owner,
               repo,
               issueNumber,
-              login: owner // assuming personal project is under the repo owner's account
+              login: 'williampln' // Your personal GitHub username
             });
             
             const itemId = result.repository[isIssue ? 'issue' : 'pullRequest'].id;
